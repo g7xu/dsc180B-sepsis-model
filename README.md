@@ -5,7 +5,7 @@ This repository contains the code and data processing pipeline for an ICU early 
 The goal of the project is to predict whether sepsis onset will occur within the next **6 hours** using routinely collected ICU vital signs aggregated at the **ICU-hour level**.
 
 ---
-
+```
 dsc180B-sepsis-model
 │
 ├── data_creation/ # scripts for building the ICU dataset
@@ -14,7 +14,7 @@ dsc180B-sepsis-model
 │
 ├── README.md # project documentation
 └── .gitignore
-
+```
 ---
 
 # Folder Description
