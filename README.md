@@ -6,13 +6,13 @@ The goal of the project is to predict whether sepsis onset will occur within the
 
 ---
 
-## Repository Structure
 dsc180B-sepsis-model
 │
-├── data_creation/ # scripts for extracting and preprocessing ICU data
-├── model/ # model training and evaluation scripts
-├── service/ # API service for deploying the trained model
-├── README.md
+├── data_creation/ # scripts for building the ICU dataset
+├── model/ # training and evaluation code
+├── service/ # API service for model inference
+│
+├── README.md # project documentation
 └── .gitignore
 
 ---
