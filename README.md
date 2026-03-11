@@ -1,120 +1,212 @@
 # DSC180B Sepsis Prediction Model
 
-This repository contains the code and data processing pipelines for the sepsis early warning model built for **UCSD DSC180B**.  
-The goal is to predict sepsis onset within a forward-looking window at the ICU-hour level using routinely collected ICU vitals.
+This repository contains the code and data processing pipeline for an ICU early warning model developed for **UCSD DSC180B Data Science Capstone**.
+
+The goal of the project is to predict whether sepsis onset will occur within the next **6 hours** using routinely collected ICU vital signs aggregated at the **ICU-hour level**.
+
+---
+```
+dsc180B-sepsis-model
+│
+├── data_creation/ # scripts for building the ICU dataset
+├── model/ # training and evaluation code
+├── service/ # API service for model inference
+│
+├── README.md # project documentation
+└── .gitignore
+```
+---
+
+# Folder Description
+
+### data_creation
+
+This folder contains scripts used to construct the modeling dataset from ICU data.
+
+Main tasks include:
+
+- extracting ICU stays
+- aligning vital sign measurements to ICU-hour observations
+- aggregating vitals into summary statistics
+- generating the final modeling dataset
+
+The output of this stage is the **processed feature table used for model training**.
 
 ---
 
-## Project Overview
+### model
 
-Early detection of sepsis can significantly improve outcomes in critical care. This project builds a machine learning classifier that:
+This folder contains the machine learning pipeline.
 
-- Predicts whether a patient will develop sepsis within the next 1–4 hours
-- Uses hourly aggregated vital sign measurements
-- Models the task at the ICU-hour level
-- Ensures no information leakage by splitting data at the ICU stay level
+Main components include:
 
-We use a **Random Forest** classifier as a strong baseline for clinical tabular data, handling non-linear patterns and moderate missingness.
+- loading the processed dataset
+- preprocessing and feature cleaning
+- model training
+- model evaluation
+- saving trained model artifacts
+
+The primary model used in this project is a **Random Forest classifier**.
+
+---
+
+### service
+
+This folder contains the **model deployment service**.
+
+It loads the trained model and exposes an API endpoint that:
+
+- accepts ICU patient feature inputs
+- returns predicted sepsis risk probabilities
+
+This allows the model to be integrated into a monitoring system.
 
 ---
 
-### 1. Data Sources and Cohort Construction
+# Project Overview
 
-We derive two main tables:
+Early detection of sepsis is critical in intensive care because timely treatment can significantly improve patient outcomes.
 
-1. **Stay-level table**  
-   Contains:
-   - `subject_id`, `hadm_id`, `stay_id`
-   - Sepsis label and onset timestamps
+This project builds a machine learning classifier that:
 
-2. **Vitals table (long format)**  
-   Hourly vital measurements aligned by:
-   ```python
-   (subject_id, hadm_id, stay_id, hour)
+- predicts whether sepsis onset will occur within the next **1–4 hours**
+- uses **hourly aggregated vital sign measurements**
+- models the prediction task at the **ICU-hour level**
+- prevents information leakage using **ICU stay-level train/test splits**
+
+A **Random Forest classifier** is used because it performs well on clinical tabular data and can capture non-linear relationships between physiological signals.
 
 ---
-2. Feature Engineering
 
-Vitals are aggregated per hour using:
+# Data Sources
 
-Mean
+The project uses ICU data derived from clinical records.
 
-Min / Max
+Two main derived tables are used:
 
-Standard deviation
+### Stay-Level Table
 
-Count
+Contains:
 
-Median
+- `subject_id`
+- `hadm_id`
+- `stay_id`
+- sepsis labels
+- onset timestamps
 
-Each feature is named:
+### Vitals Table
 
-{concept}__{stat}
-
-
-For example:
-
-HeartRate__mean
-SBP__min
+Contains hourly vital sign measurements indexed by:
+(subject_id, hadm_id, stay_id, hour)
 
 
-The final modeling table merges:
+These tables are merged to construct the modeling dataset indexed at the **ICU-hour level**.
 
-Hourly skeleton
+---
 
-Stay-level metadata
+# Feature Engineering
 
-Pivoted vitals feature matrix
+Vital signs are aggregated within each hour using summary statistics:
 
---- 
+- mean
+- minimum
+- maximum
+- median
+- standard deviation
+- count
 
-## 3. Label Definition
 
-At hour `t0`, the model predicts whether sepsis onset will occur within the next **1–4 hours**.
+The final modeling dataset combines:
+
+1. hourly ICU time grid
+2. stay-level metadata
+3. aggregated vital sign features
+
+---
+
+# Label Definition
+
+At time **t₀**, the model predicts whether sepsis onset will occur within the next **6 hours**.
 
 ### Time Definition
+t₀ = intime + hour
 
-t0 = intime + hour
 
 ### Onset Timestamp Selection
 
-The sepsis onset time is selected using:
+Sepsis onset time is determined using:
 
-- `sofa_time` (if available)
-- Otherwise `suspected_infection_time`
+- `sofa_time` (preferred)
+- `suspected_infection_time` (fallback)
 
 ### Binary Label
-
-The label is defined as:
-
-1 if sepsis == 1 AND onset_time ∈ (t0, t0 + 4 hours]
-0 otherwise
+y = 1 if onset_time ∈ (t₀, t₀ + 6 hours]
+y = 0 otherwise
 
 
-In other words, a positive label indicates that sepsis onset occurs strictly after the current hour and within the next 4 hours.
+A positive label therefore indicates that sepsis onset occurs strictly after the current hour and within the next 4 hours.
 
 ### Leakage Prevention
 
-To prevent information leakage:
+To preserve temporal validity:
 
-- All rows at or after the onset time are removed.
-- The model only uses information available prior to sepsis onset.
+- all rows at or after onset are removed
+- the model only uses information available prior to sepsis onset
 
 ---
 
-## 4. Model and Training
+# Model Training
 
-We train a machine learning pipeline:
-
-MedianImputer → RandomForestClassifier
+The machine learning pipeline is:
+MedianImputer and OneHotEcncoder → RandomForestClassifier
 
 
 ### Hyperparameters
 
-- Number of trees: `500`
-- Minimum leaf size: `5`
-- Class imbalance handling: `class_weight="balanced_subsample"`
+- number of trees: `500`
+- minimum leaf size: `5`
+- class imbalance handling: `class_weight="balanced_subsample"`
 
-The model is trained using only features available up to time `t0`, ensuring a strictly forward-looking prediction setup.
+The model is trained using only information available up to time **t₀**, ensuring a strictly forward-looking prediction setup.
 
+---
 
+# How to Reproduce the Pipeline
+
+The pipeline can be rerun in three stages.
+
+### Step 1 — Build the dataset
+
+Run the scripts in `data_creation/` to generate the ICU-hour feature dataset.
+
+### Step 2 — Train the model
+
+Run the training pipeline in `model/` to fit the Random Forest classifier.
+
+### Step 3 — Start the prediction service
+
+Run the code in `service/` to launch the inference API.
+
+---
+
+# Reproducibility Notes
+
+To reproduce the results:
+
+1. obtain access to the ICU dataset used for this project
+2. run the data creation pipeline
+3. train the model
+4. launch the prediction service
+
+The repository is organized so each stage of the pipeline can be rerun independently.
+
+---
+
+# Authors
+
+UC San Diego — DSC180B Capstone
+
+- Samuel Mahjouri  
+- Utkarsh Lohia  
+- Juntong Ye  
+- Kate Zhou
