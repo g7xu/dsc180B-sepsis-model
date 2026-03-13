@@ -11,10 +11,24 @@ dsc180B-sepsis-model
 ├── data_creation/ # scripts for building the ICU dataset
 ├── model/ # training and evaluation code
 ├── service/ # API service for model inference
-│
+├── environment.yml
 ├── README.md # project documentation
 └── .gitignore
 ```
+---
+## Environment Setup
+
+Create the conda environment from the YAML file:
+
+```bash
+conda env create -f environment.yml
+```
+
+Activate the environment:
+```bash
+conda activate sepsis_project
+```
+
 ---
 
 # Folder Description
