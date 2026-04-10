@@ -1,83 +1,75 @@
 # DSC180B Sepsis Prediction Model
 
-This repository contains the code and data processing pipeline for an ICU early warning model developed for **UCSD DSC180B Data Science Capstone**.
+This repository contains the training pipeline for an ICU early warning model developed for **UCSD DSC180B Data Science Capstone**.
 
 The goal of the project is to predict whether sepsis onset will occur within the next **6 hours** using routinely collected ICU vital signs aggregated at the **ICU-hour level**.
 
 ---
+
+## Repository Structure
+
 ```
-dsc180B-sepsis-model
-│
-├── data_creation/ # scripts for building the ICU dataset
-├── model/ # training and evaluation code
-├── service/ # API service for model inference
-├── environment.yml
-├── README.md # project documentation
-└── .gitignore
+dsc180B-sepsis-model/
+├── sql/                            # SQL materialized view definitions
+│   ├── 01_mv_icd9_patients.sql
+│   ├── 02_mv_first_icu_stay.sql
+│   ├── 03_mv_icd9_icu_cohort_data.sql
+│   ├── 04_mv_management_view_data.sql
+│   ├── mv_measurements.sql
+│   └── elixhauser_quan_from_cohort.sql
+├── notebooks/                      # Pipeline notebooks (run in order)
+│   ├── 01_create_dataset.ipynb
+│   ├── 02_train_rf.ipynb
+│   ├── 03_train_rnn.ipynb
+│   └── 04_subgroup_discovery.R
+├── data/                           # Local data files (gitignored)
+├── requirements.txt
+└── README.md
 ```
+
 ---
+
 ## Environment Setup
 
-Create the conda environment from the YAML file:
+Create and activate a virtual environment:
 
 ```bash
-conda env create -f environment.yml
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
-Activate the environment:
-```bash
-conda activate sepsis_project
+For the subgroup discovery step (`notebooks/04_subgroup_discovery.R`), R must be installed separately with the `tidyverse` and `poLCA` packages:
+
+```r
+install.packages(c("tidyverse", "poLCA"))
 ```
 
 ---
 
-# Folder Description
+## How to Reproduce the Pipeline
 
-### data_creation
+### Step 1 — Create materialized views
 
-This folder contains scripts used to construct the modeling dataset from ICU data.
+Run the SQL scripts in `sql/` against a MIMIC-IV PostgreSQL database in numeric order (`01_` through `04_`), then `mv_measurements.sql` for vital sign extraction, and `elixhauser_quan_from_cohort.sql` for comorbidity flags.
 
-Main tasks include:
+### Step 2 — Build the dataset
 
-- extracting ICU stays
-- aligning vital sign measurements to ICU-hour observations
-- aggregating vitals into summary statistics
-- generating the final modeling dataset
+Run `notebooks/01_create_dataset.ipynb` to construct the ICU-hour feature dataset.
 
-The output of this stage is the **processed feature table used for model training**.
+### Step 3 — Train the model
 
----
+Run `notebooks/02_train_rf.ipynb` to fit the Random Forest classifier (primary model).
 
-### model
+Alternatively, run `notebooks/03_train_rnn.ipynb` for the PyTorch RNN baseline.
 
-This folder contains the machine learning pipeline.
+### Step 4 (optional) — Subgroup discovery
 
-Main components include:
-
-- loading the processed dataset
-- preprocessing and feature cleaning
-- model training
-- model evaluation
-- saving trained model artifacts
-
-The primary model used in this project is a **Random Forest classifier**.
+Run `notebooks/04_subgroup_discovery.R` to perform Latent Class Analysis on comorbidity patterns.
 
 ---
 
-### service
-
-This folder contains the **model deployment service**.
-
-It loads the trained model and exposes an API endpoint that:
-
-- accepts ICU patient feature inputs
-- returns predicted sepsis risk probabilities
-
-This allows the model to be integrated into a monitoring system.
-
----
-
-# Project Overview
+## Project Overview
 
 Early detection of sepsis is critical in intensive care because timely treatment can significantly improve patient outcomes.
 
@@ -92,43 +84,27 @@ A **Random Forest classifier** is used because it performs well on clinical tabu
 
 ---
 
-# Data Sources
+## Data Sources
 
-The project uses ICU data derived from clinical records.
+The project uses ICU data derived from clinical records (MIMIC-IV).
 
 Two main derived tables are used:
 
 ### Stay-Level Table
 
-Contains:
-
-- `subject_id`
-- `hadm_id`
-- `stay_id`
-- sepsis labels
-- onset timestamps
+Contains: `subject_id`, `hadm_id`, `stay_id`, sepsis labels, onset timestamps.
 
 ### Vitals Table
 
-Contains hourly vital sign measurements indexed by:
-(subject_id, hadm_id, stay_id, hour)
-
+Contains hourly vital sign measurements indexed by `(subject_id, hadm_id, stay_id, hour)`.
 
 These tables are merged to construct the modeling dataset indexed at the **ICU-hour level**.
 
 ---
 
-# Feature Engineering
+## Feature Engineering
 
-Vital signs are aggregated within each hour using summary statistics:
-
-- mean
-- minimum
-- maximum
-- median
-- standard deviation
-- count
-
+Vital signs are aggregated within each hour using summary statistics: mean, minimum, maximum, median, standard deviation, and count.
 
 The final modeling dataset combines:
 
@@ -138,42 +114,23 @@ The final modeling dataset combines:
 
 ---
 
-# Label Definition
+## Label Definition
 
 At time **t₀**, the model predicts whether sepsis onset will occur within the next **6 hours**.
 
-### Time Definition
-t₀ = intime + hour
-
-
-### Onset Timestamp Selection
-
-Sepsis onset time is determined using:
-
-- `sofa_time` (preferred)
-- `suspected_infection_time` (fallback)
-
-### Binary Label
-y = 1 if onset_time ∈ (t₀, t₀ + 6 hours]
-y = 0 otherwise
-
-
-A positive label therefore indicates that sepsis onset occurs strictly after the current hour and within the next 4 hours.
+- **Time definition**: t₀ = intime + hour
+- **Onset timestamp**: `sofa_time` (preferred) or `suspected_infection_time` (fallback)
+- **Binary label**: y = 1 if onset_time ∈ (t₀, t₀ + 6 hours], y = 0 otherwise
 
 ### Leakage Prevention
 
-To preserve temporal validity:
-
-- all rows at or after onset are removed
-- the model only uses information available prior to sepsis onset
+To preserve temporal validity, all rows at or after onset are removed — the model only uses information available prior to sepsis onset.
 
 ---
 
-# Model Training
+## Model Training
 
-The machine learning pipeline is:
-MedianImputer and OneHotEcncoder → RandomForestClassifier
-
+Pipeline: MedianImputer and OneHotEncoder → RandomForestClassifier
 
 ### Hyperparameters
 
@@ -181,46 +138,13 @@ MedianImputer and OneHotEcncoder → RandomForestClassifier
 - minimum leaf size: `5`
 - class imbalance handling: `class_weight="balanced_subsample"`
 
-The model is trained using only information available up to time **t₀**, ensuring a strictly forward-looking prediction setup.
-
 ---
 
-# How to Reproduce the Pipeline
-
-The pipeline can be rerun in three stages.
-
-### Step 1 — Build the dataset
-
-Run the scripts in `data_creation/` to generate the ICU-hour feature dataset.
-
-### Step 2 — Train the model
-
-Run the training pipeline in `model/` to fit the Random Forest classifier.
-
-### Step 3 — Start the prediction service
-
-Run the code in `service/` to launch the inference API.
-
----
-
-# Reproducibility Notes
-
-To reproduce the results:
-
-1. obtain access to the ICU dataset used for this project
-2. run the data creation pipeline
-3. train the model
-4. launch the prediction service
-
-The repository is organized so each stage of the pipeline can be rerun independently.
-
----
-
-# Authors
+## Authors
 
 UC San Diego — DSC180B Capstone
 
-- Samuel Mahjouri  
-- Utkarsh Lohia  
-- Juntong Ye  
+- Samuel Mahjouri
+- Utkarsh Lohia
+- Juntong Ye
 - Kate Zhou
